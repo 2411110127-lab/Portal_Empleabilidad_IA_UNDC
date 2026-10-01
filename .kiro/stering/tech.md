@@ -1,35 +1,33 @@
-# Tecnología · UNDC-Empleo
-
-Redacta todos los documentos en español.
-
-## Pila de referencia (decidida por la docente; no proponer alternativas sin justificación)
-- **Lenguaje:** Python 3.11+.
-- **Backend:** FastAPI (`apps/api`), con SQLAlchemy 2, Alembic y Pydantic v2.
-- **Frontend:** portal web para estudiante, empresa y oficina (`apps/web`).
-- **Modelo de lenguaje:** Gemini API (Google AI Studio, nivel gratuito), consumida por REST con `urllib`; Groq como respaldo. Las claves van en las variables de entorno `GEMINI_API_KEY` y `GROQ_API_KEY`, nunca en el código ni en el repositorio.
-- **Recuperación (RAG):** corpus institucional de sílabos y reglamentos en `packages/rag`; embeddings locales con `sentence-transformers` multilingüe; índice vectorial local en ChromaDB. Cada fragmento conserva metadatos: documento, código de curso y sección.
-- **Datos:** base con datos sintéticos, generada por `data/sintetica/generador.py` con semilla fija (`SEED`).
-- **Acceso a datos:** servidor MCP propio en Python, construido en la semana 4 (`packages/mcp-server`), **de solo lectura**, con 9 tools y 3 resources. La única escritura permitida es registrar una postulación, y se bloquea si no hay consentimiento.
-- **Control de versiones:** Git y GitHub.
-
-## Desviaciones declaradas
-| Pila del curso | Proyecto | Justificación |
-|---|---|---|
-| HTML + JavaScript simple | Next.js 15, React 19, Tailwind v4, Recharts | Tres portales con 15 pantallas y gráficos de indicadores para la OSE. |
-| SQLite | PostgreSQL 16 con pgvector, en Docker | 24 tablas, columnas JSONB y búsqueda vectorial. |
-| Backend solo por MCP | La API arma los mismos contratos con SQL propio | El SDK de MCP es incompatible con el entorno de la API. `verificar_determinismo.py` exige la misma huella y el mismo puntaje por ambos caminos. |
-
-- Se usan tres entornos virtuales por dependencias incompatibles: `.venv` para la API y el generador, `.venv-mcp` para el MCP y el agente, y `.venv-rag` para el RAG.
-- El pipeline (`packages/agent/pipeline/`) usa solo la biblioteca estándar, para que lo importen los tres entornos.
-
-## Restricciones técnicas
-- El filtro y el puntaje no usan modelo de lenguaje. La aritmética se hace con `Decimal` y redondeo explícito, para que el número sea idéntico en cualquier máquina.
-- MCP se usa para datos estructurados y RAG para conocimiento no estructurado; no se mezclan.
-- Toda recomendación de curso incluye código y sílabo recuperados; sin respaldo, el sistema declara que no encontró información.
-- El texto del modelo pasa por un validador. Si inventa cifras o códigos, promete empleo, descarta al candidato o menciona un atributo protegido, se usa la plantilla determinista y se registra el motivo.
-- Las salidas estructuradas (JSON validado con Pydantic) cubren afinidad, ranking e indicadores.
-- Cada ejecución se registra en `match_registro` con las tres etapas en JSONB, la versión del pipeline y la huella SHA-256 de la entrada.
-- Sin claves de modelo configuradas, el sistema funciona igual, con la plantilla determinista.
-- Costo cero en desarrollo: solo servicios de nivel gratuito o ejecución local.
-- Toda regla dura tiene casos ejecutables en `tests/casos-agente/`, y `scripts\verificar.ps1` debe terminar en TODO EN VERDE.
-- Las soluciones deben ser simples y legibles, de nivel universitario, sin sobreingeniería: sin microservicios, sin colas de mensajes y sin frameworks de agentes.
+Stack y reglas técnicas · UNDC-Empleo
+Decisiones vigentes
+Producto: asistente organizacional agente de empleabilidad y seguimiento a egresados de la Escuela Profesional de Ingeniería de Sistemas, UNDC.
+Estilo: monolito modular en FastAPI con portal renderizado en servidor (propuesto). Revisión hacia API REST + SPA si aparece un consumidor externo de la API o la interactividad supera formularios y tablas.
+Orquestación del agente: flujo determinista propio en Python (ADR-001, propuesto, pendiente de firma). Alternativa de reversión antes de la semana 7: LangGraph solo con nodos deterministas. Tool calling nativo descartado (viola RNN-01 y RNN-02).
+Lenguaje: Python, versión estable vigente [VERIFICAR]. Plantillas HTML: Jinja2 [VERIFICAR].
+Servidor de aplicación: Uvicorn [VERIFICAR]. De XAMPP solo se usa la base de datos; Apache no sirve la aplicación.
+Base de datos (temporal): MySQL/MariaDB de XAMPP [VERIFICAR cuál incluye la instalación]; motor InnoDB; collation utf8mb4_unicode_ci. Las etapas de match_registro se guardan en columnas JSON validadas porque MySQL/MariaDB no tiene JSONB (deuda aceptada en ADR-001; migración prevista a PostgreSQL). Acceso a datos: [PENDIENTE de ADR].
+Servidor MCP: el propio de la semana 4, como proceso independiente. Solo lectura para perfiles, vacantes y cursos; única escritura: registrar postulación, condicionada al consentimiento compartir_con_empresas vigente.
+RAG: ChromaDB con embeddings locales [VERIFICAR modelo de embeddings]. Cada fragmento conserva documento, código de curso y sección.
+Modelo de lenguaje: Gemini como principal; Groq como respaldo solo ante HTTP 5xx o fallo de conexión de Gemini, nunca ante timeout. Timeout de 10 s. Sin claves o con salida rechazada: plantilla determinista.
+Variables de entorno: GEMINI_API_KEY y GROQ_API_KEY (opcionales), semilla HMAC del webhook de talleres, SEED del generador sintético. Nunca se versionan; se documentan en .env.example.
+Pruebas: pytest.
+Control de versiones: GitHub; ramas main (estable), develop (integración), feature-<modulo> (trabajo).
+Reglas técnicas obligatorias
+filtro_duro y puntaje son funciones puras de Python: sin modelo de lenguaje, sin red, sin lectura de reloj ni azar.
+El puntaje se calcula con Decimal y un modo de redondeo explícito declarado como constante [DEFINIR modo]; resultado entero 0–100 o nulo.
+La huella SHA-256 se calcula sobre la entrada normalizada del par perfil-vacante (JSON canónico: claves ordenadas, separadores fijos). VERSION_PIPELINE es una constante semántica y se guarda en columna propia.
+Orden fijo del pipeline: filtro → puntaje → ruta (MCP + RAG) → explicación. El modelo recibe la estructura ya calculada, sin nombre, código de usuario ni atributos protegidos, y solo devuelve texto.
+Toda salida del modelo pasa por el Validador. Si la rechaza, se usa la plantilla y se registra el motivo. explicacion_origen siempre presente: plantilla_determinista (sin claves) o plantilla_por_fallo (fallo o timeout del modelo).
+Prohibido crear columnas o campos para edad, género, foto, distrito, colegio o estado civil. Si llegan en una entrada, se descartan antes de almacenar y se registra el descarte (marca de tiempo, tipo de documento, nombres de atributos, sin valores).
+Ningún candidato se elimina de un ranking: quien no cumple el filtro duro va al final con el requisito incumplido.
+Un curso solo entra en la ruta de cierre con código vía MCP y sílabo vía RAG; sin ambos, se declara que no hay respaldo.
+Consentimiento compartir_con_empresas verificado al postular y al listar candidatos, en la capa de servicio, no solo en la vista.
+Rol oficina: solo cifras agregadas por cohorte, nunca cohortes con menos de 5 registros.
+Desarrollo solo con datos sintéticos de data/sintetica/generador.py con SEED fija.
+Ningún texto del sistema promete empleo, colocación ni contratación.
+Convenciones
+Nombres de dominio, rutas, tablas, plantillas y módulos en español.
+Base de datos: snake_case y singular (match_registro, consentimiento, postulacion, asistencia_taller).
+Python: módulos, funciones y variables en snake_case (PEP 8); clases en PascalCase; constantes en MAYÚSCULAS.
+Rutas: kebab-case (/mi-afinidad, /vacantes/{id}/ranking); la API JSON bajo /api.
+Commits en español con Conventional Commits (feat:, fix:, test:, docs:) [CONFIRMAR: el texto original se cortó aquí].
